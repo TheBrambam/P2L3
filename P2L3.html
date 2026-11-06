@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level 3 — Image-Sampled WebGL Cube Landscape</title>
+  <style>
+    /* PAGE: Use a clear, responsive interface that works without external libraries. */
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #e9f3ff; background: #091421; font: 15px/1.5 system-ui, sans-serif; }
+    header { background: #173047; border-bottom: 1px solid #4e6c80; padding: 20px max(18px, calc((100vw - 1140px)/2)); }
+    header h1 { margin: 0 0 4px; font-size: clamp(1.4rem, 3vw, 2.1rem); }
+    header p { margin: 3px 0; color: #c7dae9; }
+    main { max-width: 1180px; padding: 18px; margin: auto; }
+    .controls, .images, .sliders { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
+    .controls { margin-bottom: 14px; }
+    .control { display: flex; flex-direction: column; gap: 5px; min-width: 155px; }
+    label { color: #d3e6f7; }
+    select, button, input[type="file"] { color: inherit; font: inherit; }
+    select, button { background: #274b68; border: 1px solid #7fa4bf; border-radius: 7px; padding: 9px 12px; cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid #ffc66c; outline-offset: 2px; }
+    .panel { background: #10263b; border: 1px solid #355874; border-radius: 10px; padding: 13px 16px; margin-bottom: 14px; }
+    .panel h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    .images { align-items: stretch; }
+    .image-panel { flex: 1 1 260px; min-width: 0; }
+    .image-panel img { width: 100%; height: 108px; object-fit: cover; display: block; border: 1px solid #4d718c; border-radius: 5px; background: #172b40; }
+    .image-panel input { width: 100%; margin-top: 7px; font-size: 0.87rem; }
+    .image-panel small { display: block; color: #b9d0df; margin-top: 5px; overflow-wrap: anywhere; }
+    .slider { flex: 1 1 180px; }
+    .slider input { width: 100%; accent-color: #e6b76d; }
+    output { font-variant-numeric: tabular-nums; }
+    canvas { display: block; width: 100%; height: min(62vh, 630px); min-height: 320px; border: 1px solid #4e728e; border-radius: 10px; background: #071321; }
+    #status { min-height: 1.6em; color: #cfe2f2; }
+    .note { color: #b9cedd; font-size: 0.93rem; }
+    code { color: #ffdb9e; }
+  </style>
+</head>
+<body>
+  
+  <header>
+    <h1>Level 3 </h1>
+    <p><strong>Created by:</strong> Anthony</p>
+    <p><strong>Project:</strong> Sampling external color and grayscale PNG images to color and scale a grid of WebGL cubes.</p>
+  </header>
+
+  <main>
+    <!-- RESOLUTION/PERFORMANCE CONTROLS: Start at a laptop-friendly 32 × 32 cubes. -->
+    <div class="controls">
+      <label class="control" for="resolution">Grid resolution (x x z)
+        <select id="resolution">
+          <option value="16">16 x 16 — 256 cubes</option>
+          <option value="32" selected>32 x 32 — 1,024 cubes</option>
+          <option value="64">64 x 64 — 4,096 cubes</option>
+          <option value="100">100 x 100 — 10,000 cubes</option>
+          <option value="128">128 x 128 — 16,384 cubes (advanced)</option>
+        </select>
+      </label>
+      <label class="control" for="quality">Display quality
+        <select id="quality">
+          <option value="high">High pixel resolution</option>
+          <option value="low">Low pixel resolution (older GPUs)</option>
+        </select>
+      </label>
+      <label class="control" for="heightRange">Maximum cube height
+        <select id="heightRange">
+          <option value="5">5 world units</option>
+          <option value="10" selected>10 world units</option>
+          <option value="16">16 world units</option>
+        </select>
+      </label>
+      <button id="pause" type="button">Pause camera</button>
+      <button id="resetTarget" type="button">Reset camera target</button>
+    </div>
+
+    <!-- IMAGE INPUTS: These files live outside this HTML document, beside it. -->
+    <section class="panel" aria-label="Source image maps">
+      <h2>Source images (external PNG files)</h2>
+      <div class="images">
+        <label class="image-panel" for="colorFile">
+          <strong>Color map — FallSocial.PNG</strong>
+          <img id="colorPreview" alt="Current RGB color map" src="FallSocial.PNG">
+          <input id="colorFile" type="file" accept="image/png,image/*">
+          <small id="colorInfo">Attempting to load FallSocial.PNG</small>
+        </label>
+        <label class="image-panel" for="heightFile">
+          <strong>Grayscale height map — R.LeeErmey.PNG</strong>
+          <img id="heightPreview" alt="Current grayscale height map" src="R.LeeErmey.PNG">
+          <input id="heightFile" type="file" accept="image/png,image/*">
+          <small id="heightInfo">Attempting to load R.LeeErmey.PNG</small>
+        </label>
+      </div>
+      <p class="note">Place both PNGs in the same folder as this HTML file. If local browser restrictions prevent loading, select each PNG with the file inputs. Both images may have different dimensions.</p>
+    </section>
+
+    <!-- CAMERA CONTROLS: Each input changes one coordinate of the camera look-at point. -->
+    <section class="panel" aria-label="Camera look-at target">
+      <h2>Camera look-at target (Part D)</h2>
+      <div class="sliders">
+        <label class="slider">X: <output id="xOut">0.0</output>
+          <input id="xTarget" type="range" min="-50" max="50" step="0.5" value="0">
+        </label>
+        <label class="slider">Y: <output id="yOut">0.0</output>
+          <input id="yTarget" type="range" min="-10" max="25" step="0.5" value="0">
+        </label>
+        <label class="slider">Z: <output id="zOut">0.0</output>
+          <input id="zTarget" type="range" min="-50" max="50" step="0.5" value="0">
+        </label>
+      </div>
+      <p class="note">Look-at position: <output id="targetReadout">(0.0, 0.0, 0.0)</output>. The camera orbits this point continuously until paused.</p>
+    </section>
+
+    <!-- WEBGL DRAWING SURFACE: Cube geometry is drawn here, not as HTML elements. -->
+    <canvas id="scene" aria-label="Image-driven WebGL cube landscape"></canvas>
+    <p id="status" role="status">Loading source images…</p>
+    <p class="note"><strong>Performance:</strong> Start with 32 × 32. Higher resolutions require a more performant laptop/GPU. Try 64 × 64 and 100 × 100 before the advanced 128 x 128 option. Low display quality reduces drawing-buffer resolution but does not reduce cube count.</p>
+  </main>
+
+  <script>
+  "use strict"; // Make JavaScript reject several unsafe implicit behaviors.
+
+  // SECTION 1 — HTML ELEMENT REFERENCES: Keep all interface elements easy to find.
+  const $ = id => document.getElementById(id); // Shortcut for looking up one element by ID.
+  const canvas = $("scene"); // GPU drawing surface.
+  const status = $("status"); // Text that reports loading status, errors, and frames per second.
+  const resolution = $("resolution"); // Determines how many cubes are built along each axis.
+  const quality = $("quality"); // Chooses high or low framebuffer resolution.
+  const heightRange = $("heightRange"); // User-selected upper limit on cube heights.
+  const colorInput = $("colorFile"); // Allows choosing a replacement color map from disk.
+  const heightInput = $("heightFile"); // Allows choosing a replacement height map from disk.
+  const targetInputs = [$("xTarget"), $("yTarget"), $("zTarget")]; // Three look-at sliders.
+  const targetOutputs = [$("xOut"), $("yOut"), $("zOut")]; // Their numeric readouts.
+  const target = [0, 0, 0]; // Current camera look-at point in world-space XYZ coordinates.
+
+  // SECTION 2 — WEBGL SETUP: WebGL 1 avoids requiring WebGL 2 or extra extensions.
+  const gl = canvas.getContext("webgl", { alpha: false, antialias: true }) ||
+             canvas.getContext("experimental-webgl", { alpha: false, antialias: true });
+  if (!gl) { // Without WebGL the app cannot draw a 3D cube landscape.
+    status.textContent = "WebGL is not available in this browser. Try another browser or enable hardware acceleration.";
+  } else {
+    // SECTION 3 — GLSL PROGRAM: Each vertex has a position and a color sampled from the image.
+    const vertexSource = `
+      attribute vec3 aPosition;  // World-space vertex position, calculated on the CPU.
+      attribute vec3 aColor;     // Color sampled from the PNG and adjusted at this corner.
+      uniform mat4 uVP;         // View-projection matrix shared by every cube.
+      varying vec3 vColor;      // Value smoothly interpolated over each triangle by WebGL.
+      void main() {             // Called once for each submitted vertex.
+        gl_Position = uVP * vec4(aPosition, 1.0); // Transform into clip coordinates.
+        vColor = aColor;         // Pass vertex RGB to rasterization/interpolation.
+      }
+    `;
+    const fragmentSource = `
+      precision mediump float;  // Compatible precision for WebGL 1 fragment shaders.
+      varying vec3 vColor;      // RGB after interpolation among triangle vertices.
+      void main() {             // Called for every visible fragment.
+        gl_FragColor = vec4(vColor, 1.0); // Write final interpolated RGB and opaque alpha.
+      }
+    `;
+
+    function shader(type, source) { // Compile GLSL text into a GPU shader object.
+      const s = gl.createShader(type); // Allocate shader object of vertex or fragment type.
+      gl.shaderSource(s, source); // Provide its source text.
+      gl.compileShader(s); // Ask the GPU driver to compile the source.
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { // Detect malformed GLSL.
+        const log = gl.getShaderInfoLog(s); // Obtain useful diagnostic message.
+        gl.deleteShader(s); // Free failed GPU resource.
+        throw new Error(log); // Report failure rather than silently drawing nothing.
+      }
+      return s; // Hand compiled shader back to the caller.
+    }
+    function createProgram() { // Link a vertex shader with a fragment shader.
+      const v = shader(gl.VERTEX_SHADER, vertexSource); // Compile vertex stage.
+      const f = shader(gl.FRAGMENT_SHADER, fragmentSource); // Compile fragment stage.
+      const p = gl.createProgram(); // Allocate GPU program.
+      gl.attachShader(p, v); // Attach vertex shader.
+      gl.attachShader(p, f); // Attach fragment shader.
+      gl.linkProgram(p); // Link executable graphics pipeline.
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); // Check link.
+      gl.deleteShader(v); // Linked program keeps the executable internally.
+      gl.deleteShader(f); // Release no-longer-needed shader resources.
+      return p; // Return complete shader program.
+    }
+
+    // SECTION 4 — SOURCE PNG LOADING: Read externally stored images, not hardcoded terrain.
+    // A browser canvas converts PNG pixels to RGBA bytes so JavaScript can inspect them.
+    let colorPixels = null; // ImageData-like object for the color map.
+    let heightPixels = null; // ImageData-like object for the grayscale map.
+    let colorIntegral = null; // Summed-area table for fast average RGB sampling.
+    let heightIntegral = null; // Summed-area table for fast average grayscale sampling.
+    let loadVersion = 0; // Prevent an older asynchronous rebuild from replacing a newer one.
+    function loadFileImage(src) { // Resolve a file path or browser-created object URL to an Image.
+      return new Promise((resolve, reject) => { // Wait for browser image decoding.
+        const image = new Image(); // Browser image decoder handles PNG/JPEG formats.
+        image.onload = () => resolve(image); // Continue after valid image is decoded.
+        image.onerror = () => reject(new Error("Unable to open image: " + src)); // Surface missing files.
+        image.src = src; // Begin loading bytes from the specified URL.
+      });
+    }
+    function pixelData(image) { // Copy image pixels into a readable RGBA array.
+      const offscreen = document.createElement("canvas"); // Canvas can expose pixel bytes.
+      offscreen.width = image.naturalWidth; // Match original image resolution exactly.
+      offscreen.height = image.naturalHeight; // Preserve all source pixel rows.
+      const ctx = offscreen.getContext("2d", { willReadFrequently: true }); // Optimize many CPU reads.
+      ctx.drawImage(image, 0, 0); // Copy source pixels without resizing.
+      return ctx.getImageData(0, 0, offscreen.width, offscreen.height); // RGBA bytes: 0..255.
+    }
+
+    // SECTION 5 — SUMMED-AREA TABLES: One-time preprocessing makes each cell average O(1).
+    // The sum of any rectangular pixel region is found using just four table entries.
+    // This is preferable to one arbitrary pixel when a 100×100 grid samples a 1000×1000 image.
+    function integralImage(imageData, channels) { // channels is 3 for RGB or 1 for grayscale.
+      const w = imageData.width; // Image width in pixels.
+      const h = imageData.height; // Image height in pixels.
+      const stride = w + 1; // Extra zero border removes special cases at x=0 and y=0.
+      const sums = Array.from({ length: channels }, () => new Float64Array(stride * (h + 1))); // Precise channel sums.
+      const pixels = imageData.data; // Four bytes per pixel: R, G, B, A.
+      for (let y = 1; y <= h; y++) { // Process source pixel rows from top to bottom.
+        const running = new Float64Array(channels); // Accumulated values within current row.
+        for (let x = 1; x <= w; x++) { // Process all pixels within the row.
+          const input = ((y - 1) * w + (x - 1)) * 4; // First RGBA byte for this source pixel.
+          const here = y * stride + x; // Current integral table element.
+          for (let c = 0; c < channels; c++) { // Accumulate requested channels.
+            // For the height image, gray intensity is perceived luminance, even if an RGB PNG is supplied.
+            const sample = channels === 1
+              ? 0.2126 * pixels[input] + 0.7152 * pixels[input + 1] + 0.0722 * pixels[input + 2]
+              : pixels[input + c];
+            running[c] += sample; // Add this pixel to the row sum.
+            sums[c][here] = sums[c][here - stride] + running[c]; // Add all previously completed rows.
+          }
+        }
+      }
+      return { w, h, stride, sums }; // Keep dimensions and tables for fast region queries.
+    }
+    function sampleCell(table, gridX, gridZ, n) { // Return average pixel values for one grid cell.
+      // Map the cube cell's normalized extent [x/n, (x+1)/n] into image pixel coordinates.
+      const x0 = Math.floor(gridX * table.w / n); // Rectangle's left inclusive edge.
+      const x1 = Math.max(x0 + 1, Math.floor((gridX + 1) * table.w / n)); // Right exclusive edge.
+      const y0 = Math.floor(gridZ * table.h / n); // Top inclusive edge (mapped to world z).
+      const y1 = Math.max(y0 + 1, Math.floor((gridZ + 1) * table.h / n)); // Bottom exclusive edge.
+      const a = y0 * table.stride + x0; // Top-left integral sample.
+      const b = y0 * table.stride + x1; // Top-right integral sample.
+      const c = y1 * table.stride + x0; // Bottom-left integral sample.
+      const d = y1 * table.stride + x1; // Bottom-right integral sample.
+      const area = (x1 - x0) * (y1 - y0); // How many source pixels contribute to this cube.
+      return table.sums.map(s => (s[d] - s[b] - s[c] + s[a]) / area); // Exact rectangle mean per channel.
+    }
+
+    // SECTION 6 — GPU MESH BATCHES: Avoid 10,000 individual WebGL draw calls.
+    // WebGL 1 UNSIGNED_SHORT indices can address at most 65,536 vertices per draw.
+    // Each cube has 24 vertices, so 2048 cubes per batch safely fit this limit.
+    // Batching also works on browsers without the ANGLE_instanced_arrays extension.
+    const HALF = 0.48; // Each column is 0.96 units wide, leaving a narrow gap in a 1-unit grid.
+    const FACE_CORNERS = [ // Positions of four counterclockwise corners for each outward-facing face.
+      [[-HALF,-.5, HALF],[ HALF,-.5, HALF],[ HALF,.5, HALF],[-HALF,.5, HALF]], // +Z face.
+      [[ HALF,-.5,-HALF],[-HALF,-.5,-HALF],[-HALF,.5,-HALF],[ HALF,.5,-HALF]], // -Z face.
+      [[-HALF,.5, HALF],[ HALF,.5, HALF],[ HALF,.5,-HALF],[-HALF,.5,-HALF]], // +Y face.
+      [[-HALF,-.5,-HALF],[ HALF,-.5,-HALF],[ HALF,-.5, HALF],[-HALF,-.5, HALF]], // -Y face.
+      [[ HALF,-.5, HALF],[ HALF,-.5,-HALF],[ HALF,.5,-HALF],[ HALF,.5, HALF]], // +X face.
+      [[-HALF,-.5,-HALF],[-HALF,-.5, HALF],[-HALF,.5, HALF],[-HALF,.5,-HALF]] // -X face.
+    ];
+    const FACE_LIGHT = [0.82, 0.69, 1.00, 0.45, 0.76, 0.72]; // Color tint per face creates legible relief.
+    const CORNER_LIGHT = [0.90, 1.00, 0.95, 0.87]; // Slight differences between vertices show interpolation.
+    const BATCH_SIZE = 2048; // Keep 2048 * 24 = 49,152 vertices within WebGL 1's 16-bit index limit.
+    let batches = []; // Each batch stores GPU buffers and its triangle index count.
+    let rebuilding = false; // Indicates potentially expensive geometry generation.
+    let cubeCount = 0; // Total number of cubes currently displayed.
+
+    function gpuBuffer(targetType, data) { // Allocate a GPU buffer and populate it with typed-array data.
+      const buffer = gl.createBuffer(); // Create a new GPU resource.
+      gl.bindBuffer(targetType, buffer); // Select it as an array or index buffer.
+      gl.bufferData(targetType, data, gl.STATIC_DRAW); // Upload data once; terrain is static until settings change.
+      return buffer; // Return handle needed while drawing.
+    }
+    function releaseBatches(list) { // Free GPU memory from a previous resolution.
+      for (const batch of list) { // Visit each old batch.
+        gl.deleteBuffer(batch.position); // Free vertex coordinates.
+        gl.deleteBuffer(batch.color); // Free per-vertex color data.
+        gl.deleteBuffer(batch.index); // Free indexed triangles.
+      }
+    }
+    function buildLandscape() { // Sample both images and create translated, vertically scaled cubes.
+      if (!colorIntegral || !heightIntegral) return; // Wait until both PNG files have loaded.
+      rebuilding = true; // Mark mesh generation as active.
+      status.textContent = "Sampling images and building cube batches…"; // Give visible feedback.
+      const n = Number(resolution.value); // Cubes along x AND z axes.
+      const maxHeight = Number(heightRange.value); // Maximum height chosen by user.
+      const minHeight = 0.18; // Nonzero height prevents invisible black regions.
+      const floor = -1; // Make every column's bottom touch the same x-z ground plane.
+      const newBatches = []; // Build replacement buffers without leaking prior ones.
+      let positions = []; // Current batch's flat xyz vertex coordinates.
+      let colors = []; // Current batch's flat RGB colors (0..1).
+      let indices = []; // Current batch's triangle indices.
+      let countInBatch = 0; // Cubes added to current batch so far.
+      function flush() { // Convert one completed CPU batch into three GPU buffers.
+        if (!countInBatch) return; // Ignore empty batches.
+        newBatches.push({
+          position: gpuBuffer(gl.ARRAY_BUFFER, new Float32Array(positions)), // XYZ buffer.
+          color: gpuBuffer(gl.ARRAY_BUFFER, new Float32Array(colors)), // RGB buffer.
+          index: gpuBuffer(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices)), // Triangle buffer.
+          elements: indices.length // Number of indexed vertices drawn by gl.drawElements.
+        });
+        positions = []; colors = []; indices = []; countInBatch = 0; // Reset arrays for next batch.
+      }
+      // Each grid cell corresponds to ONE rectangle from each image; sources can differ in resolution.
+      for (let z = 0; z < n; z++) { // Iterate landscape rows along world z.
+        for (let x = 0; x < n; x++) { // Iterate landscape columns along world x.
+          const rgb = sampleCell(colorIntegral, x, z, n); // Area-averaged RGB values in 0..255.
+          const grayscale = sampleCell(heightIntegral, x, z, n)[0]; // Area-averaged grayscale in 0..255.
+          // LINEAR HEIGHT MAPPING: gray 0 -> minHeight; gray 255 -> maxHeight.
+          const height = minHeight + (grayscale / 255) * (maxHeight - minHeight);
+          const worldX = x - (n - 1) / 2; // Translate center of cell onto x-z plane.
+          const worldZ = z - (n - 1) / 2; // Translate second axis onto x-z plane.
+          const centerY = floor + height / 2; // Put the bottom at floor despite each cube's changing height.
+          const base = countInBatch * 24; // This cube owns 24 vertices: 6 faces * 4 corners.
+          FACE_CORNERS.forEach((face, faceIndex) => { // Build one cube face at a time.
+            face.forEach((corner, cornerIndex) => { // Build all four corners of the face.
+              // TRANSLATION + Y SCALING: world = vec3(local.x + worldX, local.y * height + centerY, local.z + worldZ).
+              positions.push(worldX + corner[0], centerY + corner[1] * height, worldZ + corner[2]);
+              const shade = FACE_LIGHT[faceIndex] * CORNER_LIGHT[cornerIndex]; // Different face/vertex tint.
+              // COLOR SAMPLING: The RGB average for this image region becomes this cube's vertex color.
+              colors.push(rgb[0] / 255 * shade, rgb[1] / 255 * shade, rgb[2] / 255 * shade);
+            });
+            const start = base + faceIndex * 4; // Index of this face's first vertex.
+            indices.push(start, start + 1, start + 2, start, start + 2, start + 3); // Two triangles per face.
+          });
+          countInBatch++; // Increase number of cubes in the currently accumulating batch.
+          if (countInBatch === BATCH_SIZE) flush(); // Upload batch before indices exceed 16-bit limit.
+        }
+      }
+      flush(); // Upload any remaining cubes in the final incomplete batch.
+      releaseBatches(batches); // Release old terrain buffers after replacements are ready.
+      batches = newBatches; // Draw replacement mesh in the next animation frame.
+      cubeCount = n * n; // Report number of cubes, e.g. 100*100=10,000.
+      rebuilding = false; // Rebuilding is complete.
+    }
+
+    // SECTION 7 — MATRIX MATH: Column-major matrices are required for WebGL uniforms.
+    function matMul(a, b) { // Compute a*b, a conventional 4x4 matrix product.
+      const out = new Float32Array(16); // Allocate destination matrix.
+      for (let col = 0; col < 4; col++) { // Process each output column.
+        for (let row = 0; row < 4; row++) { // Process each output row.
+          for (let k = 0; k < 4; k++) { // Calculate dot product.
+            out[col*4+row] += a[k*4+row] * b[col*4+k]; // Column-major element formula.
+          }
+        }
+      }
+      return out; // Return composed transformation.
+    }
+    function perspective(fov, aspect, near, far) { // Build a perspective-projection matrix.
+      const f = 1 / Math.tan(fov / 2); // Focal factor from field-of-view angle.
+      return new Float32Array([
+        f/aspect,0,0,0, // Horizontal perspective scaling.
+        0,f,0,0, // Vertical perspective scaling.
+        0,0,(far+near)/(near-far),-1, // Map camera depth into clip space.
+        0,0,2*far*near/(near-far),0 // Perspective translation.
+      ]);
+    }
+    function normalize(v) { // Normalize 3D vector to length 1.
+      const length = Math.hypot(v[0], v[1], v[2]) || 1; // Calculate magnitude safely.
+      return v.map(value => value / length); // Divide each component by magnitude.
+    }
+    function cross(a, b) { // Find perpendicular axis through cross product.
+      return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    }
+    function dot(a, b) { // Dot product is used to express translation in the camera's axes.
+      return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    }
+    function lookAt(eye, lookAtPoint, up) { // Orient camera at lookAtPoint regardless of its orbit position.
+      const backwards = normalize([eye[0]-lookAtPoint[0], eye[1]-lookAtPoint[1], eye[2]-lookAtPoint[2]]); // Camera +Z.
+      const right = normalize(cross(up, backwards)); // Camera +X.
+      const trueUp = cross(backwards, right); // Camera +Y.
+      return new Float32Array([
+        right[0],trueUp[0],backwards[0],0,
+        right[1],trueUp[1],backwards[1],0,
+        right[2],trueUp[2],backwards[2],0,
+        -dot(right,eye),-dot(trueUp,eye),-dot(backwards,eye),1
+      ]);
+    }
+
+    // SECTION 8 — CAMERA SLIDERS: Update the look-at point while orbiting continues.
+    function updateTarget() { // Read all three input values after any slider movement.
+      targetInputs.forEach((input, axis) => { // axes 0, 1, 2 are x, y, z respectively.
+        target[axis] = Number(input.value); // Convert slider text to a numerical coordinate.
+        targetOutputs[axis].textContent = target[axis].toFixed(1); // Show one decimal place.
+      });
+      $("targetReadout").textContent = `(${target.map(v => v.toFixed(1)).join(", ")})`; // Show XYZ together.
+    }
+    targetInputs.forEach(input => input.addEventListener("input", updateTarget)); // Live update.
+    $("resetTarget").addEventListener("click", () => { // Reset target to world origin.
+      targetInputs.forEach(input => { input.value = 0; }); // Put slider thumbs at zero.
+      updateTarget(); // Synchronize target and labels.
+    });
+    let paused = false; // Tracks camera orbit pause state.
+    $("pause").addEventListener("click", () => { // Toggle automatic camera movement.
+      paused = !paused; // Flip boolean.
+      $("pause").textContent = paused ? "Resume camera" : "Pause camera"; // Update visible label.
+    });
+    resolution.addEventListener("change", buildLandscape); // Changing grid size re-samples both images.
+    heightRange.addEventListener("change", buildLandscape); // Height scaling can be rebuilt without reloading PNGs.
+
+    // SECTION 9 — START PROGRAM: Allocate a shader program and locate vertex attributes.
+    try {
+      const program = createProgram(); // Compile/link WebGL shaders defined above.
+      gl.useProgram(program); // Activate shaders for the whole scene.
+      const pLocation = gl.getAttribLocation(program, "aPosition"); // Position attribute.
+      const cLocation = gl.getAttribLocation(program, "aColor"); // Vertex color attribute.
+      const vpLocation = gl.getUniformLocation(program, "uVP"); // Camera uniform.
+      gl.enable(gl.DEPTH_TEST); // Ensure nearer cubes hide farther cubes.
+      gl.enable(gl.CULL_FACE); // Omit cube faces oriented away from the camera.
+      gl.frontFace(gl.CCW); // Counterclockwise triangles are outward-facing.
+      gl.clearColor(0.035, 0.08, 0.12, 1); // Background RGBA.
+
+      // SECTION 10 — IMAGE INITIALIZATION: Each file may be loaded by path or a user-selected file.
+      async function setImage(which, url, label) { // Process one image input and rebuild only when ready.
+        const myVersion = ++loadVersion; // Distinguish requests; older responses must not override newer files.
+        const info = $(which + "Info"); // Show image loading results beside its preview.
+        info.textContent = "Loading " + label + "…"; // Report current operation.
+        try {
+          const image = await loadFileImage(url); // Decode PNG asynchronously.
+          const data = pixelData(image); // Read RGBA pixels; browser may reject tainted cross-origin data.
+          const integral = integralImage(data, which === "color" ? 3 : 1); // Precompute average sampling.
+          if (which === "color") { colorPixels = data; colorIntegral = integral; } // Store RGB map.
+          else { heightPixels = data; heightIntegral = integral; } // Store grayscale map.
+          $(which + "Preview").src = url; // Show exactly the image being sampled.
+          info.textContent = `${label} — ${data.width} × ${data.height} pixels`; // Report source resolution.
+          if (colorIntegral && heightIntegral) buildLandscape(); // Build only when both maps exist.
+        } catch (err) { // Missing image, unsupported file, or browser local-file security error.
+          info.textContent = `Could not read ${label}: ${err.message}. Please choose the PNG using the input.`;
+          status.textContent = "Select both PNG files to generate the landscape."; // Explain recovery.
+        }
+      }
+      function selectLocalFile(which, input) { // Convert a File object into a browser-safe object URL.
+        const file = input.files && input.files[0]; // Read chosen file, if provided.
+        if (!file) return; // No action after canceled picker.
+        const url = URL.createObjectURL(file); // Temporary local image URL avoids hardcoded path restrictions.
+        setImage(which, url, file.name).finally(() => { /* Keep URL alive for preview until page closes. */ });
+      }
+      colorInput.addEventListener("change", () => selectLocalFile("color", colorInput)); // Upload replacement color PNG.
+      heightInput.addEventListener("change", () => selectLocalFile("height", heightInput)); // Upload replacement height PNG.
+      setImage("color", "FallSocial.PNG", "FallSocial.PNG"); // Load external color map alongside this HTML.
+      setImage("height", "R.LeeErmey.PNG", "R.LeeErmey.PNG"); // Load external grayscale height map.
+
+      // SECTION 11 — ANIMATION: Orbit camera about current target; draw each batch in one draw call.
+      let orbitAngle = 0; // Camera azimuth angle in radians.
+      let previousTime = 0; // Previous requestAnimationFrame timestamp.
+      let fpsStart = 0; // Time when FPS reporting interval began.
+      let fpsFrames = 0; // Frames drawn during current measurement interval.
+      let fps = 0; // Current estimated frames per second.
+      function render(now) { // requestAnimationFrame delivers current timestamp in milliseconds.
+        const seconds = Math.min((now - (previousTime || now)) / 1000, 0.05); // Clamp time step after tab suspension.
+        previousTime = now; // Save time for next frame.
+        if (!paused) orbitAngle += seconds * 0.22; // Rotate camera slowly around its look-at point.
+        const pixelRatio = quality.value === "high" ? Math.min(window.devicePixelRatio || 1, 2) : 0.65; // GPU scaling.
+        const width = Math.max(1, Math.floor(canvas.clientWidth * pixelRatio)); // Actual framebuffer width.
+        const height = Math.max(1, Math.floor(canvas.clientHeight * pixelRatio)); // Actual framebuffer height.
+        if (canvas.width !== width || canvas.height !== height) { // Resize only when necessary.
+          canvas.width = width; canvas.height = height; // Update GPU drawing-buffer resolution.
+        }
+        gl.viewport(0, 0, width, height); // Draw across the entire canvas.
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); // Erase old frame and depth values.
+        const n = Number(resolution.value); // Selected number of landscape columns.
+        const radius = n * 1.18 + 12; // Position camera farther away for larger landscapes.
+        const eye = [ // Orbit in the x-z plane while maintaining elevation above the target.
+          target[0] + Math.cos(orbitAngle) * radius, // Camera world-space X.
+          target[1] + n * 0.56 + 6, // Camera world-space Y (elevated view).
+          target[2] + Math.sin(orbitAngle) * radius // Camera world-space Z.
+        ];
+        const view = lookAt(eye, target, [0, 1, 0]); // Always point toward selected target.
+        const projection = perspective(Math.PI / 3, width / height, .1, radius * 5); // 60-degree field of view.
+        gl.uniformMatrix4fv(vpLocation, false, matMul(projection, view)); // Send camera transform once per frame.
+        for (const batch of batches) { // Only a few draw calls even for 10,000+ cubes.
+          gl.bindBuffer(gl.ARRAY_BUFFER, batch.position); // Select world-space xyz vertex buffer.
+          gl.enableVertexAttribArray(pLocation); // Activate position attribute.
+          gl.vertexAttribPointer(pLocation, 3, gl.FLOAT, false, 0, 0); // Three floats per XYZ vertex.
+          gl.bindBuffer(gl.ARRAY_BUFFER, batch.color); // Select color buffer for this batch.
+          gl.enableVertexAttribArray(cLocation); // Activate RGB attribute.
+          gl.vertexAttribPointer(cLocation, 3, gl.FLOAT, false, 0, 0); // Three floats per RGB vertex.
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, batch.index); // Select indexed triangles.
+          gl.drawElements(gl.TRIANGLES, batch.elements, gl.UNSIGNED_SHORT, 0); // Draw all cubes in this batch.
+        }
+        fpsFrames++; // Count finished frame.
+        if (now - fpsStart >= 800) { // Update FPS display about once per second.
+          fps = Math.round(fpsFrames * 1000 / Math.max(1, now - fpsStart)); // Frames / elapsed seconds.
+          fpsFrames = 0; fpsStart = now; // Reset measurement interval.
+          if (cubeCount && !rebuilding) { // Do not replace loading or error messages until terrain exists.
+            status.textContent = `${n} x ${n} = ${cubeCount.toLocaleString()} cubes | ${batches.length} draw calls | ${fps} FPS | ${quality.value} display quality`; // Performance summary.
+          }
+        }
+        requestAnimationFrame(render); // Ask browser to animate next frame.
+      }
+      requestAnimationFrame(render); // Start scene animation once WebGL is ready.
+    } catch (error) { // Catch shader/link errors or unavailable GPU resources.
+      console.error(error); // Detailed diagnostics for developer tools.
+      status.textContent = "WebGL initialization failed: " + error.message; // Inform the user.
+    }
+  }
+  </script>
+</body>
+</html>
